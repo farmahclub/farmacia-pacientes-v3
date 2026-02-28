@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 import urllib.parse
 from io import BytesIO
 
-# --- 1. CONFIGURACIÓN BASE DE DATOS (VERSIÓN FINAL) ---
+# --- 1. CONFIGURACIÓN BASE DE DATOS ---
 def crear_conexion():
     return sqlite3.connect('farmacia_final_v4.db', check_same_thread=False)
 
@@ -38,7 +38,7 @@ def enviar_email(destinatario, nombre, url_app):
 st.set_page_config(page_title="Gestión Farmacia Pro", layout="wide", page_icon="💊")
 inicializar_db()
 
-# --- IMPORTANTE: SUSTITUYE ESTA URL POR LA QUE TE DA STREAMLIT ---
+# --- URL REAL DE TU APP ---
 URL_APP = "https://tdyxipgchc5jegixrwkbp9.streamlit.app/" 
 
 if 'auth' not in st.session_state:
@@ -79,10 +79,10 @@ if not st.session_state['auth']:
     }
     </style>
     """, unsafe_allow_html=True)
-
-st.divider()
-
-tab1, tab2 = st.tabs(["🔒 Administración", "👤 Pacientes"])
+    
+    st.divider()
+    
+    tab1, tab2 = st.tabs(["🔒 Administración", "👤 Pacientes"])
     
     with tab1:
         u = st.text_input("Usuario Admin")
@@ -122,11 +122,8 @@ elif st.session_state['auth'] == "admin":
                 c1.write(f"**{row['nombre']}** ({row['num_historia']})")
                 estado_color = "🟢" if row['estado'] == "CONFIRMADO" else "🟡"
                 c2.write(f"{estado_color} {row['estado']}")
-                
                 if c3.button("📧 Email", key=f"e_{row['num_historia']}"):
-                    if enviar_email(row['email'], row['nombre'], URL_APP): 
-                        st.success("Enviado")
-                
+                    if enviar_email(row['email'], row['nombre'], URL_APP): st.success("Enviado")
                 msg_wa = urllib.parse.quote(f"Hola {row['nombre']}, su medicación está lista. Confirme aquí: {URL_APP}")
                 c4.markdown(f"[![WA](https://img.shields.io/badge/WhatsApp-25D366?style=flat&logo=whatsapp&logoColor=white)](https://wa.me/{row['telefono']}?text={msg_wa})")
 
@@ -153,7 +150,7 @@ elif st.session_state['auth'] == "admin":
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False)
-        st.download_button("📥 Descargar Tabla de Pacientes", output.getvalue(), "listado_pacientes.xlsx")
+        st.download_button("📥 Descargar Tabla", output.getvalue(), "listado_pacientes.xlsx")
 
     if menu == "🚪 Salir":
         st.session_state['auth'] = False; st.rerun()
@@ -170,15 +167,12 @@ elif st.session_state['auth'] == "paciente":
     </div>
     """, unsafe_allow_html=True)
     
-    st.write("")
     if st.button("✅ CONFIRMAR QUE PASARÉ A RECOGERLA"):
         conn = crear_conexion(); c = conn.cursor()
         c.execute("UPDATE pacientes SET estado='CONFIRMADO' WHERE num_historia=?", (p[0],))
         conn.commit(); conn.close()
         st.balloons()
-        st.success("¡Confirmación registrada! El personal de farmacia ya ha sido avisado.")
+        st.success("¡Confirmación registrada!")
     
     if st.button("🚪 Cerrar Sesión"):
         st.session_state['auth'] = False; st.rerun()
-
-
