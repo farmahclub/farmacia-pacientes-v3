@@ -39,7 +39,7 @@ st.set_page_config(page_title="Gestión Farmacia Pro", layout="wide", page_icon=
 inicializar_db()
 
 # --- IMPORTANTE: SUSTITUYE ESTA URL POR LA QUE TE DA STREAMLIT ---
-URL_APP = "https://farmacia-pacientes-v3.streamlit.app/" 
+URL_APP = "https://tdyxipgchc5jegixrwkbp9.streamlit.app/" 
 
 if 'auth' not in st.session_state:
     st.session_state['auth'] = False
@@ -183,3 +183,4 @@ elif st.session_state['auth'] == "paciente":
     
     if st.button("🚪 Cerrar Sesión"):
         st.session_state['auth'] = False; st.rerun()
+
