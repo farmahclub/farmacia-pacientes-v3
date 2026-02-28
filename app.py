@@ -38,56 +38,55 @@ def enviar_email(destinatario, nombre, url_app):
 st.set_page_config(page_title="Farmacia Clientes", layout="wide", page_icon="💊")
 inicializar_db()
 
-# URL REAL DE TU APP (Asegúrate de que sea esta)
+# URL de tu App
 URL_APP = "https://tdyxipgchc5jegixrwkbp9.streamlit.app/" 
 
 if 'auth' not in st.session_state: st.session_state['auth'] = False
 
 # --- MARCA DE AGUA FLOTANTE ---
+# Todo pegado a la izquierda para evitar que Streamlit lo haga texto
 st.markdown("""
-    <style>
-    .footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: transparent;
-        color: rgba(150, 150, 150, 0.4);
-        text-align: right;
-        padding-right: 20px;
-        font-size: 12px;
-        z-index: 100;
-    }
-    </style>
-    <div class="footer">® By Juanma - Todos los derechos reservados</div>
-    """, unsafe_allow_html=True)
+<style>
+.footer {
+position: fixed;
+left: 0;
+bottom: 0;
+width: 100%;
+background-color: transparent;
+color: rgba(150, 150, 150, 0.5);
+text-align: right;
+padding-right: 20px;
+font-size: 14px;
+z-index: 100;
+}
+</style>
+<div class="footer">® By Juanma - Todos los derechos reservados</div>
+""", unsafe_allow_html=True)
 
 # --- PANTALLA DE ACCESO ---
 if not st.session_state['auth']:
-    # Animación del camión (Hacia adelante y con logo de medicina)
-    st.markdown("""
-    <div style="width: 100%; height: 220px; background-color: #f0f8ff; border-radius: 15px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; border: 2px solid #e0f0ff;">
-        <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; background: #f0f0f0;"></div>
-        
-        <div style="position: absolute; bottom: 20px; animation: moverAdelante 8s infinite linear;">
-            <div style="text-align: center;">
-                <div style="font-size: 30px; margin-bottom: -10px;">💊</div>
-                <div style="font-size: 70px;">🚚</div>
-            </div>
-        </div>
-        
-        <div style="z-index: 1; text-align: center; color: #004d99; font-family: Arial, sans-serif;">
-            <h1 style="margin:0; letter-spacing: 2px;">GESTIÓN DE FARMACIA</h1>
-            <p style="font-size: 18px; font-weight: bold;">Acceso Exclusivo para Pacientes</p>
-        </div>
-    </div>
     
-    <style>
-    @keyframes moverAdelante {
-        0% { left: -150px; }
-        100% { left: 100%; }
-    }
-    </style>
+    # Animación del camión CORREGIDA (Hacia delante, con logo y sin espacios a la izquierda)
+    st.markdown("""
+<div style="width: 100%; height: 220px; background-color: #f0f8ff; border-radius: 15px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; border: 2px solid #e0f0ff;">
+<div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; background: #f0f0f0;"></div>
+<div style="position: absolute; bottom: 20px; animation: moverAdelante 8s infinite linear;">
+<div style="text-align: center;">
+<div style="font-size: 30px; margin-bottom: -10px;">💊</div>
+<div style="font-size: 70px;">🚚</div>
+</div>
+</div>
+<div style="z-index: 1; text-align: center; color: #004d99; font-family: Arial, sans-serif;">
+<h1 style="margin:0; letter-spacing: 2px;">GESTIÓN DE FARMACIA</h1>
+<p style="font-size: 18px; font-weight: bold;">Acceso Exclusivo para Pacientes</p>
+</div>
+</div>
+<style>
+@keyframes moverAdelante {
+0% { left: -150px; }
+100% { left: 100%; }
+}
+</style>
     """, unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns([1,1.5,1])
@@ -107,7 +106,7 @@ if not st.session_state['auth']:
                 st.rerun()
             else: st.error("Datos de acceso incorrectos.")
 
-    # ACCESO ADMIN DISCRETO
+    # ACCESO ADMIN TOTALMENTE DISCRETO
     st.write("")
     with st.expander("🛠️"):
         u_admin = st.text_input("Admin User")
@@ -149,26 +148,26 @@ elif st.session_state['auth'] == "admin":
         file = st.file_uploader("Seleccionar archivo Excel", type=['xlsx'])
         if file:
             df_excel = pd.read_excel(file)
-            st.write("Vista previa:")
+            st.write("Vista previa de los datos:")
             st.dataframe(df_excel.head())
-            if st.button("🚀 Confirmar Importación"):
+            if st.button("🚀 Cargar Pacientes a la Base de Datos"):
                 conn = crear_conexion()
                 df_excel['estado'] = "Pendiente"
                 df_excel.to_sql('pacientes', conn, if_exists='append', index=False)
                 conn.close()
-                st.success("¡Importación finalizada!")
+                st.success("¡Carga completada con éxito!")
 
     elif menu == "➕ Alta Manual":
         with st.form("registro_manual"):
             h = st.text_input("Nº Historia / DNI"); n = st.text_input("Nombre"); a = st.text_input("Primer Apellido")
             e = st.text_input("Email"); t = st.text_input("Teléfono (34...)"); p = st.text_input("Clave Inicial")
             m = st.text_input("Medicación Asignada")
-            if st.form_submit_button("Registrar"):
+            if st.form_submit_button("Registrar Paciente"):
                 conn = crear_conexion(); c = conn.cursor()
                 try:
                     c.execute("INSERT INTO pacientes VALUES (?,?,?,?,?,?,?,?)", (h,n,a,e,t,p,m,"Pendiente"))
-                    conn.commit(); st.success("Registrado."); st.rerun()
-                except: st.error("Error: El ID ya existe.")
+                    conn.commit(); st.success("Paciente registrado."); st.rerun()
+                except: st.error("Error: El Nº de Historia ya existe.")
                 finally: conn.close()
 
     if menu == "🚪 Salir": st.session_state['auth'] = False; st.rerun()
@@ -176,27 +175,27 @@ elif st.session_state['auth'] == "admin":
 # --- VISTA PACIENTE ---
 elif st.session_state['auth'] == "paciente":
     p = st.session_state['user_data']
-    st.title(f"👋 Bienvenido/a, {p[1]} {p[2]}")
+    st.title(f"Bienvenido/a, {p[1]}")
     
     st.markdown(f"""
-    <div style="background-color: #ffffff; padding: 25px; border-radius: 15px; border: 1px solid #e0e0e0; box-shadow: 2px 2px 10px rgba(0,0,0,0.05);">
-        <h3 style="color: #004d99;">📦 Su Medicación:</h3>
-        <p style="font-size: 20px;">{p[6]}</p>
-        <p>Estado actual: <b>{p[7]}</b></p>
-    </div>
+<div style="background-color: #ffffff; padding: 25px; border-radius: 15px; border: 1px solid #e0e0e0; box-shadow: 2px 2px 10px rgba(0,0,0,0.05);">
+<h3 style="color: #004d99;">📦 Su Medicación:</h3>
+<p style="font-size: 20px;">{p[6]}</p>
+<p>Estado actual: <b>{p[7]}</b></p>
+</div>
     """, unsafe_allow_html=True)
     
     st.write("")
     if st.button("✅ CONFIRMAR QUE PASARÉ A RECOGERLA", use_container_width=True):
         conn = crear_conexion(); c = conn.cursor()
         c.execute("UPDATE pacientes SET estado='CONFIRMADO' WHERE num_historia=?", (p[0],))
-        conn.commit(); conn.close(); st.balloons(); st.success("¡Gracias! Aviso enviado.")
+        conn.commit(); conn.close(); st.balloons(); st.success("¡Gracias! Aviso enviado a la farmacia.")
 
     with st.expander("⚙️ Ajustes de Cuenta"):
         nueva_p = st.text_input("Cambiar mi contraseña", type="password")
         if st.button("Guardar nueva clave"):
             conn = crear_conexion(); c = conn.cursor()
             c.execute("UPDATE pacientes SET password=? WHERE num_historia=?", (nueva_p, p[0]))
-            conn.commit(); conn.close(); st.success("Contraseña actualizada con éxito.")
+            conn.commit(); conn.close(); st.success("Contraseña actualizada.")
 
     if st.button("Cerrar Sesión"): st.session_state['auth'] = False; st.rerun()
