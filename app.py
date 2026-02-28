@@ -44,7 +44,6 @@ URL_APP = "https://tdyxipgchc5jegixrwkbp9.streamlit.app/"
 if 'auth' not in st.session_state: st.session_state['auth'] = False
 
 # --- MARCA DE AGUA FLOTANTE ---
-# Todo pegado a la izquierda para evitar que Streamlit lo haga texto
 st.markdown("""
 <style>
 .footer {
@@ -66,14 +65,14 @@ z-index: 100;
 # --- PANTALLA DE ACCESO ---
 if not st.session_state['auth']:
     
-    # Animación del camión CORREGIDA (Hacia delante, con logo y sin espacios a la izquierda)
+    # Animación del camión: Ahora sí, mirando hacia la derecha
     st.markdown("""
 <div style="width: 100%; height: 220px; background-color: #f0f8ff; border-radius: 15px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; border: 2px solid #e0f0ff;">
 <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; background: #f0f0f0;"></div>
 <div style="position: absolute; bottom: 20px; animation: moverAdelante 8s infinite linear;">
 <div style="text-align: center;">
 <div style="font-size: 30px; margin-bottom: -10px;">💊</div>
-<div style="font-size: 70px;">🚚</div>
+<div style="font-size: 70px; transform: scaleX(-1); display: inline-block;">🚚</div>
 </div>
 </div>
 <div style="z-index: 1; text-align: center; color: #004d99; font-family: Arial, sans-serif;">
