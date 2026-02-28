@@ -4,6 +4,7 @@ import pandas as pd
 import smtplib
 from email.mime.text import MIMEText
 import urllib.parse
+from io import BytesIO
 
 # --- 1. CONFIGURACIÓN Y BASE DE DATOS ---
 def crear_conexion():
@@ -12,9 +13,9 @@ def crear_conexion():
 def inicializar_db():
     conn = crear_conexion()
     c = conn.cursor()
-    # Cambiado DNI por num_historia
     c.execute('''CREATE TABLE IF NOT EXISTS pacientes 
-                 (num_historia TEXT PRIMARY KEY, nombre TEXT, email TEXT, telefono TEXT, password TEXT, medicacion TEXT, estado TEXT, fecha_confirmacion TEXT)''')
+                 (num_historia TEXT PRIMARY KEY, nombre TEXT, email TEXT, telefono TEXT, 
+                  password TEXT, medicacion TEXT, estado TEXT, fecha_confirmacion TEXT)''')
     conn.commit()
     conn.close()
 
@@ -30,16 +31,18 @@ def eliminar_paciente(num_historia):
 def actualizar_paciente(num_historia, nuevo_nombre, nueva_med, nuevo_tel):
     conn = crear_conexion()
     c = conn.cursor()
-    c.execute("UPDATE pacientes SET nombre=?, medicacion=?, telefono=? WHERE num_historia=?", (nuevo_nombre, nueva_med, nuevo_tel, num_historia))
+    c.execute("UPDATE pacientes SET nombre=?, medicacion=?, telefono=? WHERE num_historia=?", 
+              (nuevo_nombre, nueva_med, nuevo_tel, num_historia))
     conn.commit()
     conn.close()
-    st.success("Datos actualizados")
+    st.success("Datos actualizados correctamente")
 
 # --- 3. FUNCIONES DE ENVÍO ---
 def enviar_email(destinatario, nombre, fecha):
     try:
         remitente = st.secrets["EMAIL_REMITENTE"]
         password = st.secrets["EMAIL_PASSWORD"]
+        # Asegúrate de que esta URL es la correcta de tu app
         url_app = "https://rlgempgxpbckskamagrk83v.streamlit.app/"
         
         msg = MIMEText(f"Hola {nombre}, tu medicación está lista para recoger el {fecha}.\nConfirma aquí: {url_app}")
@@ -51,7 +54,8 @@ def enviar_email(destinatario, nombre, fecha):
             server.login(remitente, password)
             server.sendmail(remitente, destinatario, msg.as_string())
         return True
-    except:
+    except Exception as e:
+        st.error(f"Error de envío: {e}")
         return False
 
 # --- 4. INTERFAZ ---
@@ -69,9 +73,14 @@ if not st.session_state['auth']:
         if u == "admin@clinica.com" and p == "admin77":
             st.session_state['auth'] = True
             st.rerun()
+        else:
+            st.error("Credenciales incorrectas")
 else:
     st.sidebar.title("Menú Principal")
-    menu = st.sidebar.radio("Ir a:", ["📊 Control y Envíos", "➕ Nuevo Paciente", "⚙️ Gestión y Modificación"])
+    menu = st.sidebar.radio("Ir a:", ["📊 Control y Envíos", "➕ Nuevo Paciente", "⚙️ Gestión y Modificación", "📥 Importar/Exportar Excel"])
+
+    # URL REAL PARA LOS ENLACES
+    URL_REAL = "https://rlgempgxpbckskamagrk83v.streamlit.app/"
 
     if menu == "📊 Control y Envíos":
         st.header("Seguimiento de Recogidas")
@@ -87,45 +96,46 @@ else:
                 col1.write(f"**{row['nombre']}** (H.C: {row['num_historia']})")
                 col2.write(f"Estado: {row['estado']}")
                 
-                # BOTÓN EMAIL
                 if col3.button("📧 Email", key=f"em_{row['num_historia']}"):
                     if enviar_email(row['email'], row['nombre'], "mañana"):
-                        st.success("Email enviado")
+                        st.success(f"Email enviado a {row['nombre']}")
                 
-               # --- CONFIGURACIÓN DEL MENSAJE DE WHATSAPP ---
-                # 1. PEGA AQUÍ TU URL REAL (la que ves en el navegador)
-                URL_REAL = "https://rlgempgxpbckskamagrk83v.streamlit.app/" 
-                
-                # 2. CREACIÓN DEL MENSAJE PERSONALIZADO
                 mensaje_texto = (
                     f"Hola *{row['nombre']}*, le informamos desde la *Farmacia* que su medicación "
                     f"({row['medicacion']}) ya está disponible para su recogida.\n\n"
                     f"Por favor, confirme la recepción pulsando en este enlace seguro:\n{URL_REAL}"
                 )
-                
-                # 3. CODIFICACIÓN PARA WHATSAPP
                 texto_final_wa = urllib.parse.quote(mensaje_texto)
                 url_wa = f"https://wa.me/{row['telefono']}?text={texto_final_wa}"
-                
-                # 4. BOTÓN VISUAL
                 col4.markdown(f"[![WhatsApp](https://img.shields.io/badge/WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)]({url_wa})")
+
     elif menu == "➕ Nuevo Paciente":
         st.header("Registro de Historia Clínica")
-        with st.form("alta"):
+        # Usamos st.form para agrupar, al enviarse el formulario se refresca y vacía solo
+        with st.form("alta_paciente", clear_on_submit=True):
             hc = st.text_input("Número de Historia Clínica")
             nom = st.text_input("Nombre Completo")
             em = st.text_input("Email")
-            tel = st.text_input("Teléfono (con 34 delante)")
+            tel = st.text_input("Teléfono (ej: 34600000000)")
             med = st.text_input("Medicación")
             pwd = st.text_input("Contraseña para el paciente")
-            if st.form_submit_button("Guardar Paciente"):
-                conn = crear_conexion()
-                c = conn.cursor()
-                c.execute("INSERT INTO pacientes (num_historia, nombre, email, telefono, password, medicacion, estado) VALUES (?,?,?,?,?,?,?)",
-                          (hc, nom, em, tel, pwd, med, "Pendiente"))
-                conn.commit()
-                conn.close()
-                st.success("Registrado")
+            
+            submit = st.form_submit_button("Guardar Paciente")
+            if submit:
+                if hc and nom:
+                    conn = crear_conexion()
+                    c = conn.cursor()
+                    try:
+                        c.execute("INSERT INTO pacientes (num_historia, nombre, email, telefono, password, medicacion, estado) VALUES (?,?,?,?,?,?,?)",
+                                  (hc, nom, em, tel, pwd, med, "Pendiente"))
+                        conn.commit()
+                        st.success(f"Paciente {nom} registrado y formulario listo para el siguiente.")
+                    except:
+                        st.error("Error: El número de Historia Clínica ya existe.")
+                    finally:
+                        conn.close()
+                else:
+                    st.warning("Por favor, rellena al menos el número de Historia y el Nombre.")
 
     elif menu == "⚙️ Gestión y Modificación":
         st.header("Administrar o Modificar Pacientes")
@@ -142,8 +152,46 @@ else:
                 c1, c2 = st.columns(2)
                 if c1.button("Guardar Cambios", key=f"save_{row['num_historia']}"):
                     actualizar_paciente(row['num_historia'], nuevo_n, nueva_m, nuevo_t)
-                if c2.button("🗑️ Eliminar Definitivamente", key=f"del_{row['num_historia']}"):
+                if c2.button("🗑️ Eliminar", key=f"del_{row['num_historia']}"):
                     eliminar_paciente(row['num_historia'])
 
-
-
+    elif menu == "📥 Importar/Exportar Excel":
+        st.header("Gestión de Datos con Excel")
+        
+        # --- EXPORTAR ---
+        st.subheader("Exportar Base de Datos")
+        conn = crear_conexion()
+        df_export = pd.read_sql("SELECT * FROM pacientes", conn)
+        conn.close()
+        
+        if not df_export.empty:
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_export.to_excel(writer, index=False, sheet_name='Pacientes')
+            
+            st.download_button(
+                label="📥 Descargar Tabla en Excel",
+                data=output.getvalue(),
+                file_name="pacientes_farmacia.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        
+        st.divider()
+        
+        # --- IMPORTAR ---
+        st.subheader("Importar desde Excel")
+        st.info("El archivo Excel debe tener estas columnas: num_historia, nombre, email, telefono, password, medicacion, estado")
+        archivo_subido = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
+        
+        if archivo_subido:
+            df_import = pd.read_excel(archivo_subido)
+            if st.button("Confirmar Importación"):
+                conn = crear_conexion()
+                try:
+                    # 'append' añade los nuevos datos a los que ya existen
+                    df_import.to_sql('pacientes', conn, if_exists='append', index=False)
+                    st.success("Pacientes importados con éxito.")
+                except Exception as e:
+                    st.error(f"Error al importar: Asegúrate de que los números de historia no estén repetidos.")
+                finally:
+                    conn.close()
