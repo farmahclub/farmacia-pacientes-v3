@@ -40,7 +40,7 @@ def enviar_email(destinatario, nombre, fecha):
     try:
         remitente = st.secrets["EMAIL_REMITENTE"]
         password = st.secrets["EMAIL_PASSWORD"]
-        url_app = "https://rlgempgxpbckskamagrk83v.streamlit.app/"
+        url_app = "https://https://rlgempgxpbcskamagrk83v.streamlit.app/"
         
         msg = MIMEText(f"Hola {nombre}, tu medicación está lista para recoger el {fecha}.\nConfirma aquí: {url_app}")
         msg['Subject'] = "Medicación Lista - Farmacia"
@@ -132,3 +132,4 @@ else:
                     actualizar_paciente(row['num_historia'], nuevo_n, nueva_m, nuevo_t)
                 if c2.button("🗑️ Eliminar Definitivamente", key=f"del_{row['num_historia']}"):
                     eliminar_paciente(row['num_historia'])
+
