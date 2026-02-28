@@ -6,16 +6,16 @@ from email.mime.text import MIMEText
 import urllib.parse
 from io import BytesIO
 
-# --- 1. CONFIGURACIÓN BASE DE DATOS ---
+# --- 1. CONFIGURACIÓN BASE DE DATOS (NUEVA VERSIÓN V6 CON CN) ---
 def crear_conexion():
-    return sqlite3.connect('farmacia_v5.db', check_same_thread=False)
+    return sqlite3.connect('farmacia_v6.db', check_same_thread=False)
 
 def inicializar_db():
     conn = crear_conexion()
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS pacientes 
                  (num_historia TEXT PRIMARY KEY, nombre TEXT, primer_apellido TEXT, email TEXT, 
-                  telefono TEXT, password TEXT, medicacion TEXT, estado TEXT)''')
+                  telefono TEXT, password TEXT, medicacion TEXT, codigo_nacional TEXT, estado TEXT)''')
     conn.commit()
     conn.close()
 
@@ -168,7 +168,7 @@ elif st.session_state['auth'] == "admin":
 
     elif menu == "📤 Importar Excel":
         st.subheader("Carga Masiva de Pacientes")
-        st.write("El Excel debe tener: `num_historia`, `nombre`, `primer_apellido`, `email`, `telefono`, `password`, `medicacion`.")
+        st.write("El Excel debe tener: `num_historia`, `nombre`, `primer_apellido`, `email`, `telefono`, `password`, `medicacion`, `codigo_nacional`.")
         file = st.file_uploader("Seleccionar archivo Excel", type=['xlsx'])
         if file:
             df_excel = pd.read_excel(file)
@@ -186,10 +186,11 @@ elif st.session_state['auth'] == "admin":
             h = st.text_input("Nº Historia / DNI"); n = st.text_input("Nombre"); a = st.text_input("Primer Apellido")
             e = st.text_input("Email"); t = st.text_input("Teléfono (34...)"); p = st.text_input("Clave Inicial")
             m = st.text_input("Medicación Asignada")
+            cn = st.text_input("Código Nacional (CN - Opcional, 6 dígitos)")
             if st.form_submit_button("Registrar"):
                 conn = crear_conexion(); c = conn.cursor()
                 try:
-                    c.execute("INSERT INTO pacientes VALUES (?,?,?,?,?,?,?,?)", (h,n,a,e,t,p,m,"Pendiente"))
+                    c.execute("INSERT INTO pacientes VALUES (?,?,?,?,?,?,?,?,?)", (h,n,a,e,t,p,m,cn,"Pendiente"))
                     conn.commit(); st.success("Registrado."); st.rerun()
                 except: st.error("Error: El ID ya existe.")
                 finally: conn.close()
@@ -201,11 +202,19 @@ elif st.session_state['auth'] == "paciente":
     p = st.session_state['user_data']
     st.title(f"👋 Bienvenido/a, {p[1]} {p[2]}")
     
-    # ENLACES DINÁMICOS (CIMA y CALENDARIO)
+    # DATOS DEL PACIENTE
     medicacion = p[6]
-    estado_actual = p[7]
-    med_encode = urllib.parse.quote(medicacion)
-    enlace_cima = f"https://cima.aemps.es/cima/publico/lista.html?raZonSocial={med_encode}"
+    codigo_nacional = p[7]
+    estado_actual = p[8]
+    
+    # ENLACE INTELIGENTE A CIMA (Por CN o por Nombre)
+    if codigo_nacional:
+        # Si hay Código Nacional, va directo al medicamento exacto
+        enlace_cima = f"https://cima.aemps.es/cima/publico/lista.html?cn={codigo_nacional}"
+    else:
+        # Si no hay CN, busca por el nombre de la medicación
+        med_encode = urllib.parse.quote(medicacion)
+        enlace_cima = f"https://cima.aemps.es/cima/publico/lista.html?raZonSocial={med_encode}"
     
     # Construcción del evento para Google Calendar
     titulo_cal = urllib.parse.quote("Recogida de Medicación - Farmacia")
@@ -242,9 +251,9 @@ elif st.session_state['auth'] == "paciente":
             c.execute("UPDATE pacientes SET estado='CONFIRMADO' WHERE num_historia=?", (p[0],))
             conn.commit(); conn.close()
             
-            # Actualizamos la memoria temporal para que muestre el QR sin tener que salir
+            # Actualizamos la memoria temporal para que muestre el QR
             lista_p = list(p)
-            lista_p[7] = 'CONFIRMADO'
+            lista_p[8] = 'CONFIRMADO'
             st.session_state['user_data'] = tuple(lista_p)
             
             st.balloons()
@@ -252,7 +261,7 @@ elif st.session_state['auth'] == "paciente":
             
     else:
         st.success("✅ Recogida confirmada. Por favor, muestra este código QR en el mostrador de la farmacia:")
-        # Generador de QR dinámico a través de API (No necesita instalar librerías extras)
+        # Generador de QR dinámico a través de API
         qr_data = urllib.parse.quote(f"Paciente:{p[1]} {p[2]} | ID:{p[0]} | Med:{p[6]}")
         qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={qr_data}&color=004d99"
         
