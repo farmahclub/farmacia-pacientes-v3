@@ -117,7 +117,6 @@ elif st.session_state['auth'] == "admin":
     st.sidebar.header("Panel de Gestión")
     menu = st.sidebar.radio("Navegación", ["📊 Dashboard & Avisos", "🗂️ Editor Base de Datos", "📤 Importar Excel", "➕ Alta Manual", "🚪 Salir"])
 
-    # 1. PANEL DE SEGUIMIENTO Y DASHBOARD
     if menu == "📊 Dashboard & Avisos":
         st.header("Seguimiento de Recogidas")
         conn = crear_conexion(); df = pd.read_sql("SELECT * FROM pacientes", conn); conn.close()
@@ -125,7 +124,6 @@ elif st.session_state['auth'] == "admin":
         if df.empty:
             st.warning("No hay pacientes en la base de datos.")
         else:
-            # DASHBOARD DE MÉTRICAS PRO
             total = len(df)
             confirmados = len(df[df['estado'] == 'CONFIRMADO'])
             pendientes = total - confirmados
@@ -136,7 +134,6 @@ elif st.session_state['auth'] == "admin":
             col_m3.metric("✅ Confirmados", confirmados)
             st.divider()
 
-            # LISTA PARA AVISOS
             for i, r in df.iterrows():
                 with st.container():
                     c1, c2, c3, c4 = st.columns([2,1,1,1])
@@ -151,28 +148,24 @@ elif st.session_state['auth'] == "admin":
                     c4.markdown(f"[📲 WhatsApp](https://wa.me/{r['telefono']}?text={msg_wa})")
                     st.divider()
 
-    # 2. EDITOR TIPO EXCEL PRO
     elif menu == "🗂️ Editor Base de Datos":
         st.header("Editor Interactivo de Pacientes")
-        st.info("💡 Haz doble clic en cualquier celda para editar. Puedes añadir filas abajo o seleccionar filas a la izquierda y presionar 'Suprimir' para borrar.")
+        st.info("💡 Haz doble clic en cualquier celda para editar. Puedes seleccionar filas a la izquierda y presionar 'Suprimir' para borrar.")
         
         conn = crear_conexion()
         df = pd.read_sql("SELECT * FROM pacientes", conn)
         conn.close()
 
-        # Renderizar el editor como un Excel
         edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
         if st.button("💾 Guardar Cambios Permanentes"):
             conn = crear_conexion(); c = conn.cursor()
-            # Borramos la tabla vieja y guardamos la nueva versión manteniendo la estructura
             c.execute("DELETE FROM pacientes")
             conn.commit()
             edited_df.to_sql('pacientes', conn, if_exists='append', index=False)
             conn.close()
             st.success("¡Base de datos actualizada correctamente!")
 
-    # 3. IMPORTAR EXCEL
     elif menu == "📤 Importar Excel":
         st.subheader("Carga Masiva de Pacientes")
         st.write("El Excel debe tener: `num_historia`, `nombre`, `primer_apellido`, `email`, `telefono`, `password`, `medicacion`.")
@@ -188,7 +181,6 @@ elif st.session_state['auth'] == "admin":
                 conn.close()
                 st.success("¡Importación finalizada!")
 
-    # 4. ALTA MANUAL
     elif menu == "➕ Alta Manual":
         with st.form("registro_manual"):
             h = st.text_input("Nº Historia / DNI"); n = st.text_input("Nombre"); a = st.text_input("Primer Apellido")
@@ -209,31 +201,66 @@ elif st.session_state['auth'] == "paciente":
     p = st.session_state['user_data']
     st.title(f"👋 Bienvenido/a, {p[1]} {p[2]}")
     
-    # ENLACE DINÁMICO A CIMA
+    # ENLACES DINÁMICOS (CIMA y CALENDARIO)
     medicacion = p[6]
+    estado_actual = p[7]
     med_encode = urllib.parse.quote(medicacion)
     enlace_cima = f"https://cima.aemps.es/cima/publico/lista.html?raZonSocial={med_encode}"
+    
+    # Construcción del evento para Google Calendar
+    titulo_cal = urllib.parse.quote("Recogida de Medicación - Farmacia")
+    detalles_cal = urllib.parse.quote(f"Recuerda ir a la farmacia a recoger: {medicacion}.\n¡No olvides llevar tu QR de la App!")
+    enlace_cal = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={titulo_cal}&details={detalles_cal}"
 
     st.markdown(f"""
 <div style="background-color: #ffffff; padding: 25px; border-radius: 15px; border: 1px solid #e0e0e0; box-shadow: 2px 2px 10px rgba(0,0,0,0.05);">
 <h3 style="color: #004d99;">📦 Su Medicación:</h3>
 <p style="font-size: 20px; font-weight: bold;">{medicacion}</p>
-<p>Estado actual: <b>{p[7]}</b></p>
+<p>Estado actual: <b>{estado_actual}</b></p>
 <hr>
-<a href="{enlace_cima}" target="_blank" style="text-decoration: none; color: #white;">
-    <button style="background-color: #008CBA; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer;">
-        📄 Leer prospecto en CIMA
-    </button>
-</a>
+<div style="display: flex; gap: 10px; flex-wrap: wrap;">
+    <a href="{enlace_cima}" target="_blank" style="text-decoration: none;">
+        <button style="background-color: #008CBA; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+            📄 Leer prospecto en CIMA
+        </button>
+    </a>
+    <a href="{enlace_cal}" target="_blank" style="text-decoration: none;">
+        <button style="background-color: #FFA500; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+            📅 Añadir recordatorio al Calendario
+        </button>
+    </a>
+</div>
 </div>
     """, unsafe_allow_html=True)
     
     st.write("")
-    if st.button("✅ CONFIRMAR QUE PASARÉ A RECOGERLA", use_container_width=True):
-        conn = crear_conexion(); c = conn.cursor()
-        c.execute("UPDATE pacientes SET estado='CONFIRMADO' WHERE num_historia=?", (p[0],))
-        conn.commit(); conn.close(); st.balloons(); st.success("¡Gracias! Aviso enviado.")
+    
+    # LÓGICA DEL QR Y CONFIRMACIÓN
+    if estado_actual != 'CONFIRMADO':
+        if st.button("✅ CONFIRMAR QUE PASARÉ A RECOGERLA", use_container_width=True):
+            conn = crear_conexion(); c = conn.cursor()
+            c.execute("UPDATE pacientes SET estado='CONFIRMADO' WHERE num_historia=?", (p[0],))
+            conn.commit(); conn.close()
+            
+            # Actualizamos la memoria temporal para que muestre el QR sin tener que salir
+            lista_p = list(p)
+            lista_p[7] = 'CONFIRMADO'
+            st.session_state['user_data'] = tuple(lista_p)
+            
+            st.balloons()
+            st.rerun()
+            
+    else:
+        st.success("✅ Recogida confirmada. Por favor, muestra este código QR en el mostrador de la farmacia:")
+        # Generador de QR dinámico a través de API (No necesita instalar librerías extras)
+        qr_data = urllib.parse.quote(f"Paciente:{p[1]} {p[2]} | ID:{p[0]} | Med:{p[6]}")
+        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={qr_data}&color=004d99"
+        
+        col_qr1, col_qr2, col_qr3 = st.columns([1,2,1])
+        with col_qr2:
+            st.image(qr_url, width=200)
 
+    st.write("---")
     with st.expander("⚙️ Ajustes de Cuenta"):
         nueva_p = st.text_input("Cambiar mi contraseña", type="password")
         if st.button("Guardar nueva clave"):
