@@ -4,7 +4,7 @@ import pandas as pd
 import smtplib
 from email.mime.text import MIMEText
 
-# --- 1. CONFIGURACIÓN Y BASE DE DATOS ---
+# --- CONFIGURACIÓN BASE DE DATOS ---
 def crear_conexion():
     return sqlite3.connect('clinica_privada.db', check_same_thread=False)
 
@@ -16,50 +16,29 @@ def inicializar_db():
     conn.commit()
     conn.close()
 
-# Función nueva para eliminar
+# --- FUNCIONES DE GESTIÓN ---
+def registrar_paciente(dni, nombre, email, password, medicacion):
+    conn = crear_conexion()
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO pacientes (dni, nombre, email, password, medicacion, estado) VALUES (?,?,?,?,?,?)",
+                  (dni, nombre, email, password, medicacion, "Pendiente"))
+        conn.commit()
+        st.success(f"✅ Paciente {nombre} registrado con éxito.")
+    except:
+        st.error("❌ El DNI ya existe.")
+    conn.close()
+
 def eliminar_paciente(dni):
     conn = crear_conexion()
     c = conn.cursor()
     c.execute("DELETE FROM pacientes WHERE dni=?", (dni,))
     conn.commit()
     conn.close()
+    st.rerun()
 
-# --- 2. INTERFAZ DE ADMINISTRADOR ---
-def panel_administrador():
-    st.sidebar.title("Panel de Farmacia")
-    menu = st.sidebar.radio("Ir a:", ["📊 Control de Envíos", "➕ Alta de Paciente", "⚙️ Gestión de Base de Datos"])
-
-    if menu == "📊 Control de Envíos":
-        st.header("Seguimiento de Recogidas")
-        # Aquí va tu tabla actual de envíos...
-
-    elif menu == "➕ Alta de Paciente":
-        st.header("Registrar Nuevo Paciente")
-        # Aquí va tu formulario de alta...
-
-    elif menu == "⚙️ Gestión de Base de Datos":
-        st.header("🛠️ Administración de Pacientes")
-        conn = crear_conexion()
-        df = pd.read_sql("SELECT dni, nombre, email, medicacion FROM pacientes", conn)
-        conn.close()
-
-        if df.empty:
-            st.info("No hay pacientes registrados aún.")
-        else:
-            for i, row in df.iterrows():
-                with st.expander(f"👤 {row['nombre']} (DNI: {row['dni']})"):
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write(f"**Email:** {row['email']}")
-                        st.write(f"**Medicación:** {row['medicacion']}")
-                    with col2:
-                        if st.button(f"🗑️ Eliminar a {row['nombre']}", key=f"del_{row['dni']}"):
-                            eliminar_paciente(row['dni'])
-                            st.success(f"Paciente {row['nombre']} eliminado.")
-                            st.rerun()
-
-# --- 3. LÓGICA DE LOGIN ---
-st.set_page_config(page_title="Gestor Farmacéutico", page_icon="💊", layout="wide")
+# --- INTERFAZ ---
+st.set_page_config(page_title="Gestor Farmacia", page_icon="💊", layout="wide")
 inicializar_db()
 
 if 'auth' not in st.session_state:
@@ -67,14 +46,44 @@ if 'auth' not in st.session_state:
 
 if not st.session_state['auth']:
     st.title("🔐 Acceso Seguro")
-    with st.form("login"):
-        u = st.text_input("Email")
-        p = st.text_input("Contraseña", type="password")
-        if st.form_submit_button("Entrar"):
-            if u == "admin@clinica.com" and p == "admin77":
-                st.session_state['auth'] = True
-                st.session_state['user_role'] = "admin"
-                st.rerun()
-            # ... lógica para login de pacientes ...
+    u = st.text_input("Email")
+    p = st.text_input("Contraseña", type="password")
+    if st.button("Entrar"):
+        if u == "admin@clinica.com" and p == "admin77":
+            st.session_state['auth'] = True
+            st.rerun()
 else:
-    panel_administrador()
+    st.sidebar.title("Panel de Farmacia")
+    menu = st.sidebar.radio("Ir a:", ["📊 Control de Envíos", "➕ Alta de Paciente", "⚙️ Gestión de Base de Datos"])
+
+    if menu == "📊 Control de Envíos":
+        st.header("Seguimiento de Recogidas")
+        conn = crear_conexion()
+        df = pd.read_sql("SELECT * FROM pacientes", conn)
+        conn.close()
+        if df.empty:
+            st.info("No hay pacientes. Ve a 'Alta de Paciente'.")
+        else:
+            st.table(df[['nombre', 'dni', 'medicacion', 'estado']])
+
+    elif menu == "➕ Alta de Paciente":
+        st.header("Nuevo Registro")
+        with st.form("nuevo_p"):
+            d = st.text_input("DNI")
+            n = st.text_input("Nombre")
+            e = st.text_input("Email")
+            passw = st.text_input("Clave para el paciente")
+            med = st.text_input("Medicación")
+            if st.form_submit_button("Guardar"):
+                registrar_paciente(d, n, e, passw, med)
+
+    elif menu == "⚙️ Gestión de Base de Datos":
+        st.header("Administrar Pacientes")
+        conn = crear_conexion()
+        df = pd.read_sql("SELECT dni, nombre FROM pacientes", conn)
+        conn.close()
+        for i, row in df.iterrows():
+            col1, col2 = st.columns([3, 1])
+            col1.write(f"{row['nombre']} ({row['dni']})")
+            if col2.button("Eliminar", key=row['dni']):
+                eliminar_paciente(row['dni'])
