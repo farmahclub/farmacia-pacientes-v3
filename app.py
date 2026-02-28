@@ -40,7 +40,7 @@ def enviar_email(destinatario, nombre, fecha):
     try:
         remitente = st.secrets["EMAIL_REMITENTE"]
         password = st.secrets["EMAIL_PASSWORD"]
-        url_app = "https://https://rlgempgxpbcskamagrk83v.streamlit.app/"
+        url_app = "https://rlgempgxpbcskamagrk83v.streamlit.app/"
         
         msg = MIMEText(f"Hola {nombre}, tu medicación está lista para recoger el {fecha}.\nConfirma aquí: {url_app}")
         msg['Subject'] = "Medicación Lista - Farmacia"
@@ -92,11 +92,23 @@ else:
                     if enviar_email(row['email'], row['nombre'], "mañana"):
                         st.success("Email enviado")
                 
-                # BOTÓN WHATSAPP
-                texto_wa = urllib.parse.quote(f"Hola {row['nombre']}, tu medicación está lista. Confirma aquí: https://rlgempgxpbckskamagrk83v.streamlit.app/")
-                url_wa = f"https://wa.me/{row['telefono']}?text={texto_wa}"
-                col4.markdown(f"[![WA](https://img.shields.io/badge/WhatsApp-25D366?style=flat&logo=whatsapp&logoColor=white)]({url_wa})")
-
+               # --- CONFIGURACIÓN DEL MENSAJE DE WHATSAPP ---
+                # 1. PEGA AQUÍ TU URL REAL (la que ves en el navegador)
+                URL_REAL = "https://rlgempgxpbckskamagrk83v.streamlit.app/" 
+                
+                # 2. CREACIÓN DEL MENSAJE PERSONALIZADO
+                mensaje_texto = (
+                    f"Hola *{row['nombre']}*, le informamos desde la *Farmacia* que su medicación "
+                    f"({row['medicacion']}) ya está disponible para su recogida.\n\n"
+                    f"Por favor, confirme la recepción pulsando en este enlace seguro:\n{URL_REAL}"
+                )
+                
+                # 3. CODIFICACIÓN PARA WHATSAPP
+                texto_final_wa = urllib.parse.quote(mensaje_texto)
+                url_wa = f"https://wa.me/{row['telefono']}?text={texto_final_wa}"
+                
+                # 4. BOTÓN VISUAL
+                col4.markdown(f"[![WhatsApp](https://img.shields.io/badge/WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)]({url_wa})")
     elif menu == "➕ Nuevo Paciente":
         st.header("Registro de Historia Clínica")
         with st.form("alta"):
@@ -132,4 +144,5 @@ else:
                     actualizar_paciente(row['num_historia'], nuevo_n, nueva_m, nuevo_t)
                 if c2.button("🗑️ Eliminar Definitivamente", key=f"del_{row['num_historia']}"):
                     eliminar_paciente(row['num_historia'])
+
 
