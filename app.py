@@ -52,7 +52,6 @@ if not st.session_state['auth']:
     st.markdown("""
     <div style="width: 100%; height: 200px; background-color: #f0f8ff; border-radius: 15px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; border: 2px solid #e0f0ff;">
         <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; background: linear-gradient(0deg, #d3d3d3 0%, rgba(211,211,211,0) 100%);"></div>
-        
         <div style="position: absolute; bottom: 15px; animation: moverCamion 8s infinite linear;">
             <div style="font-size: 80px; position: relative;">
                 🚚
@@ -61,13 +60,11 @@ if not st.session_state['auth']:
                 </div>
             </div>
         </div>
-        
         <div style="z-index: 1; text-align: center; color: #004d99; font-weight: bold; font-family: sans-serif;">
             <div style="font-size: 28px;">SU MEDICACIÓN ESTÁ EN CAMINO</div>
             <div style="font-size: 16px; opacity: 0.8;">Acceda para confirmar su recogida</div>
         </div>
     </div>
-    
     <style>
     @keyframes moverCamion {
         0% { left: -150px; transform: scaleX(1); }
@@ -82,10 +79,10 @@ if not st.session_state['auth']:
     }
     </style>
     """, unsafe_allow_html=True)
-    
-    st.divider()
-    
-    tab1, tab2 = st.tabs(["🔒 Administración", "👤 Pacientes"])
+
+st.divider()
+
+tab1, tab2 = st.tabs(["🔒 Administración", "👤 Pacientes"])
     
     with tab1:
         u = st.text_input("Usuario Admin")
@@ -183,4 +180,5 @@ elif st.session_state['auth'] == "paciente":
     
     if st.button("🚪 Cerrar Sesión"):
         st.session_state['auth'] = False; st.rerun()
+
 
