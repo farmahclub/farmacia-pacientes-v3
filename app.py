@@ -4,9 +4,11 @@ import pandas as pd
 import smtplib
 from email.mime.text import MIMEText
 import urllib.parse
+import urllib.request
+import json
 from io import BytesIO
 
-# --- 1. CONFIGURACIÓN BASE DE DATOS (NUEVA VERSIÓN V6 CON CN) ---
+# --- 1. CONFIGURACIÓN BASE DE DATOS (Mantenemos v6 con CN) ---
 def crear_conexion():
     return sqlite3.connect('farmacia_v6.db', check_same_thread=False)
 
@@ -34,7 +36,29 @@ def enviar_email(destinatario, nombre, url_app):
         return True
     except: return False
 
-# --- 3. INTERFAZ ---
+def obtener_enlace_cima(cn, nombre_med):
+    # Si no hay CN, busca por el nombre en la lupa de CIMA
+    if not cn:
+        med_encode = urllib.parse.quote(str(nombre_med))
+        return f"https://cima.aemps.es/cima/publico/lista.html?raZonSocial={med_encode}"
+    
+    try:
+        # Magia: Conectamos a la API del Ministerio para sacar el enlace DIRECTO al prospecto
+        url_api = f"https://cima.aemps.es/cima/rest/medicamento?cn={cn}"
+        req = urllib.request.Request(url_api, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                nregistro = data.get('nregistro')
+                if nregistro:
+                    # Este es el enlace exacto al texto del prospecto
+                    return f"https://cima.aemps.es/cima/dochtml/p/{nregistro}/Prospecto.html"
+    except Exception as e:
+        pass # Si falla (ej. CIMA está caído), salta a la búsqueda normal
+    
+    return f"https://cima.aemps.es/cima/publico/lista.html?cn={cn}"
+
+# --- 3. INTERFAZ PRINCIPAL ---
 st.set_page_config(page_title="Farmacia Clientes", layout="wide", page_icon="💊")
 inicializar_db()
 
@@ -136,7 +160,8 @@ elif st.session_state['auth'] == "admin":
 
             for i, r in df.iterrows():
                 with st.container():
-                    c1, c2, c3, c4 = st.columns([2,1,1,1])
+                    # Añadimos espacio para el botón de "Nuevo Pedido"
+                    c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1.5])
                     c1.write(f"👤 **{r['nombre']} {r['primer_apellido']}**")
                     color = "🟢" if r['estado'] == "CONFIRMADO" else "🟡"
                     c2.write(f"{color} {r['estado']}")
@@ -146,11 +171,20 @@ elif st.session_state['auth'] == "admin":
                     
                     msg_wa = urllib.parse.quote(f"Hola {r['nombre']}, su medicación está lista. Acceda aquí: {URL_APP}")
                     c4.markdown(f"[📲 WhatsApp](https://wa.me/{r['telefono']}?text={msg_wa})")
+                    
+                    # BOTÓN DE RESTABLECER (Solo sale si ya han recogido el pedido)
+                    if r['estado'] == 'CONFIRMADO':
+                        if c5.button("🔄 Nuevo Pedido", key=f"r_{r['num_historia']}"):
+                            conn = crear_conexion(); c = conn.cursor()
+                            c.execute("UPDATE pacientes SET estado='Pendiente' WHERE num_historia=?", (r['num_historia'],))
+                            conn.commit(); conn.close()
+                            st.rerun()
+                    
                     st.divider()
 
     elif menu == "🗂️ Editor Base de Datos":
         st.header("Editor Interactivo de Pacientes")
-        st.info("💡 Haz doble clic en cualquier celda para editar. Puedes seleccionar filas a la izquierda y presionar 'Suprimir' para borrar.")
+        st.info("💡 Haz doble clic en cualquier celda para editar. Selecciona filas a la izquierda y presiona 'Suprimir' para borrar.")
         
         conn = crear_conexion()
         df = pd.read_sql("SELECT * FROM pacientes", conn)
@@ -182,18 +216,31 @@ elif st.session_state['auth'] == "admin":
                 st.success("¡Importación finalizada!")
 
     elif menu == "➕ Alta Manual":
-        with st.form("registro_manual"):
-            h = st.text_input("Nº Historia / DNI"); n = st.text_input("Nombre"); a = st.text_input("Primer Apellido")
-            e = st.text_input("Email"); t = st.text_input("Teléfono (34...)"); p = st.text_input("Clave Inicial")
+        # Activar el "clear_on_submit" para que las celdas se vacíen al guardar
+        with st.form("registro_manual", clear_on_submit=True):
+            h = st.text_input("Nº Historia / DNI")
+            n = st.text_input("Nombre")
+            a = st.text_input("Primer Apellido")
+            e = st.text_input("Email")
+            t = st.text_input("Teléfono (34...)")
+            p = st.text_input("Clave Inicial")
             m = st.text_input("Medicación Asignada")
             cn = st.text_input("Código Nacional (CN - Opcional, 6 dígitos)")
-            if st.form_submit_button("Registrar"):
-                conn = crear_conexion(); c = conn.cursor()
-                try:
-                    c.execute("INSERT INTO pacientes VALUES (?,?,?,?,?,?,?,?,?)", (h,n,a,e,t,p,m,cn,"Pendiente"))
-                    conn.commit(); st.success("Registrado."); st.rerun()
-                except: st.error("Error: El ID ya existe.")
-                finally: conn.close()
+            
+            if st.form_submit_button("Registrar Nuevo Paciente"):
+                if h and n: # Comprobación básica de que haya escrito algo
+                    conn = crear_conexion(); c = conn.cursor()
+                    try:
+                        c.execute("INSERT INTO pacientes VALUES (?,?,?,?,?,?,?,?,?)", (h,n,a,e,t,p,m,cn,"Pendiente"))
+                        conn.commit()
+                        # Quitamos el st.rerun() para permitir que el formulario se limpie visualmente
+                        st.success(f"¡Paciente {n} {a} registrado! El formulario se ha vaciado para el siguiente.")
+                    except: 
+                        st.error("Error: El ID / Nº Historia ya existe en el sistema.")
+                    finally: 
+                        conn.close()
+                else:
+                    st.warning("Por favor, introduzca al menos el ID y el Nombre.")
 
     if menu == "🚪 Salir": st.session_state['auth'] = False; st.rerun()
 
@@ -207,14 +254,8 @@ elif st.session_state['auth'] == "paciente":
     codigo_nacional = p[7]
     estado_actual = p[8]
     
-    # ENLACE INTELIGENTE A CIMA (Por CN o por Nombre)
-    if codigo_nacional:
-        # Si hay Código Nacional, va directo al medicamento exacto
-        enlace_cima = f"https://cima.aemps.es/cima/publico/lista.html?cn={codigo_nacional}"
-    else:
-        # Si no hay CN, busca por el nombre de la medicación
-        med_encode = urllib.parse.quote(medicacion)
-        enlace_cima = f"https://cima.aemps.es/cima/publico/lista.html?raZonSocial={med_encode}"
+    # NUEVA CONEXIÓN INTELIGENTE A CIMA
+    enlace_cima = obtener_enlace_cima(codigo_nacional, medicacion)
     
     # Construcción del evento para Google Calendar
     titulo_cal = urllib.parse.quote("Recogida de Medicación - Farmacia")
@@ -230,7 +271,7 @@ elif st.session_state['auth'] == "paciente":
 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
     <a href="{enlace_cima}" target="_blank" style="text-decoration: none;">
         <button style="background-color: #008CBA; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-            📄 Leer prospecto en CIMA
+            📄 Leer prospecto exacto en CIMA
         </button>
     </a>
     <a href="{enlace_cal}" target="_blank" style="text-decoration: none;">
@@ -251,7 +292,7 @@ elif st.session_state['auth'] == "paciente":
             c.execute("UPDATE pacientes SET estado='CONFIRMADO' WHERE num_historia=?", (p[0],))
             conn.commit(); conn.close()
             
-            # Actualizamos la memoria temporal para que muestre el QR
+            # Actualizamos la memoria temporal para mostrar el QR
             lista_p = list(p)
             lista_p[8] = 'CONFIRMADO'
             st.session_state['user_data'] = tuple(lista_p)
