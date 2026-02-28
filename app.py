@@ -38,7 +38,7 @@ def enviar_email(destinatario, nombre, url_app):
 st.set_page_config(page_title="Farmacia Clientes", layout="wide", page_icon="💊")
 inicializar_db()
 
-# URL de tu App
+# URL REAL DE TU APP (Asegúrate de que sea esta)
 URL_APP = "https://tdyxipgchc5jegixrwkbp9.streamlit.app/" 
 
 if 'auth' not in st.session_state: st.session_state['auth'] = False
@@ -52,10 +52,10 @@ st.markdown("""
         bottom: 0;
         width: 100%;
         background-color: transparent;
-        color: rgba(150, 150, 150, 0.5);
+        color: rgba(150, 150, 150, 0.4);
         text-align: right;
         padding-right: 20px;
-        font-size: 14px;
+        font-size: 12px;
         z-index: 100;
     }
     </style>
@@ -64,7 +64,7 @@ st.markdown("""
 
 # --- PANTALLA DE ACCESO ---
 if not st.session_state['auth']:
-    # Animación del camión CORREGIDA (Hacia delante y con logo)
+    # Animación del camión (Hacia adelante y con logo de medicina)
     st.markdown("""
     <div style="width: 100%; height: 220px; background-color: #f0f8ff; border-radius: 15px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; border: 2px solid #e0f0ff;">
         <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; background: #f0f0f0;"></div>
@@ -107,7 +107,7 @@ if not st.session_state['auth']:
                 st.rerun()
             else: st.error("Datos de acceso incorrectos.")
 
-    # ACCESO ADMIN TOTALMENTE DISCRETO
+    # ACCESO ADMIN DISCRETO
     st.write("")
     with st.expander("🛠️"):
         u_admin = st.text_input("Admin User")
@@ -149,26 +149,26 @@ elif st.session_state['auth'] == "admin":
         file = st.file_uploader("Seleccionar archivo Excel", type=['xlsx'])
         if file:
             df_excel = pd.read_excel(file)
-            st.write("Vista previa de los datos:")
+            st.write("Vista previa:")
             st.dataframe(df_excel.head())
-            if st.button("🚀 Cargar Pacientes a la Base de Datos"):
+            if st.button("🚀 Confirmar Importación"):
                 conn = crear_conexion()
                 df_excel['estado'] = "Pendiente"
                 df_excel.to_sql('pacientes', conn, if_exists='append', index=False)
                 conn.close()
-                st.success("¡Carga completada con éxito!")
+                st.success("¡Importación finalizada!")
 
     elif menu == "➕ Alta Manual":
         with st.form("registro_manual"):
             h = st.text_input("Nº Historia / DNI"); n = st.text_input("Nombre"); a = st.text_input("Primer Apellido")
             e = st.text_input("Email"); t = st.text_input("Teléfono (34...)"); p = st.text_input("Clave Inicial")
             m = st.text_input("Medicación Asignada")
-            if st.form_submit_button("Registrar Paciente"):
+            if st.form_submit_button("Registrar"):
                 conn = crear_conexion(); c = conn.cursor()
                 try:
                     c.execute("INSERT INTO pacientes VALUES (?,?,?,?,?,?,?,?)", (h,n,a,e,t,p,m,"Pendiente"))
-                    conn.commit(); st.success("Paciente registrado."); st.rerun()
-                except: st.error("Error: El Nº de Historia ya existe.")
+                    conn.commit(); st.success("Registrado."); st.rerun()
+                except: st.error("Error: El ID ya existe.")
                 finally: conn.close()
 
     if menu == "🚪 Salir": st.session_state['auth'] = False; st.rerun()
@@ -176,7 +176,7 @@ elif st.session_state['auth'] == "admin":
 # --- VISTA PACIENTE ---
 elif st.session_state['auth'] == "paciente":
     p = st.session_state['user_data']
-    st.title(f"Bienvenido/a, {p[1]}")
+    st.title(f"👋 Bienvenido/a, {p[1]} {p[2]}")
     
     st.markdown(f"""
     <div style="background-color: #ffffff; padding: 25px; border-radius: 15px; border: 1px solid #e0e0e0; box-shadow: 2px 2px 10px rgba(0,0,0,0.05);">
@@ -190,13 +190,13 @@ elif st.session_state['auth'] == "paciente":
     if st.button("✅ CONFIRMAR QUE PASARÉ A RECOGERLA", use_container_width=True):
         conn = crear_conexion(); c = conn.cursor()
         c.execute("UPDATE pacientes SET estado='CONFIRMADO' WHERE num_historia=?", (p[0],))
-        conn.commit(); conn.close(); st.balloons(); st.success("¡Gracias! Aviso enviado a la farmacia.")
+        conn.commit(); conn.close(); st.balloons(); st.success("¡Gracias! Aviso enviado.")
 
     with st.expander("⚙️ Ajustes de Cuenta"):
         nueva_p = st.text_input("Cambiar mi contraseña", type="password")
         if st.button("Guardar nueva clave"):
             conn = crear_conexion(); c = conn.cursor()
             c.execute("UPDATE pacientes SET password=? WHERE num_historia=?", (nueva_p, p[0]))
-            conn.commit(); conn.close(); st.success("Contraseña actualizada.")
+            conn.commit(); conn.close(); st.success("Contraseña actualizada con éxito.")
 
     if st.button("Cerrar Sesión"): st.session_state['auth'] = False; st.rerun()
