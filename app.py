@@ -40,7 +40,7 @@ def enviar_email_privado(destinatario, nombre_completo, fecha):
         
         📅 Fecha: {fecha}
         
-        🔗 Enlace de acceso: {url_acceso}
+        🔗 Enlace de acceso: {https://rlgempgxpbcskamagrk83v.streamlit.app/}
         
         Atentamente,
         Tu Farmacia.
@@ -167,4 +167,5 @@ else:
                 conn.commit()
                 conn.close()
                 st.balloons()
+
                 st.rerun()
