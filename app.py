@@ -6,9 +6,10 @@ from email.mime.text import MIMEText
 import urllib.parse
 import urllib.request
 import json
+import datetime
 from io import BytesIO
 
-# --- 1. CONFIGURACIÓN BASE DE DATOS (Mantenemos v6 con CN) ---
+# --- 1. CONFIGURACIÓN BASE DE DATOS ---
 def crear_conexion():
     return sqlite3.connect('farmacia_v6.db', check_same_thread=False)
 
@@ -22,14 +23,23 @@ def inicializar_db():
     conn.close()
 
 # --- 2. FUNCIONES DE APOYO ---
-def enviar_email(destinatario, nombre, url_app):
+# NUEVO: Hemos añadido "fecha" y "hora" a los parámetros
+def enviar_email(destinatario, nombre, url_app, fecha, hora):
     try:
         remitente = st.secrets["EMAIL_REMITENTE"]
         pwd = st.secrets["EMAIL_PASSWORD"]
-        msg = MIMEText(f"Hola {nombre}, su medicación está lista.\nAcceda con su apellido aquí: {url_app}")
-        msg['Subject'] = "AVISO: Farmacia - Medicación Lista"
+        
+        # Damos formato bonito a la fecha y la hora
+        fecha_str = fecha.strftime('%d/%m/%Y')
+        hora_str = hora.strftime('%H:%M')
+        
+        cuerpo_mensaje = f"Hola {nombre},\n\nSu medicación ya está lista en nuestra farmacia.\n\n📅 Día de recogida: {fecha_str}\n🕒 A partir de las: {hora_str}\n\nPor favor, haga clic en el siguiente enlace y acceda con su primer apellido para confirmar que pasará a recogerla:\n{url_app}"
+        
+        msg = MIMEText(cuerpo_mensaje)
+        msg['Subject'] = "AVISO: Farmacia - Medicación Lista para Recoger"
         msg['From'] = remitente
         msg['To'] = destinatario
+        
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(remitente, pwd)
             server.sendmail(remitente, destinatario, msg.as_string())
@@ -37,13 +47,10 @@ def enviar_email(destinatario, nombre, url_app):
     except: return False
 
 def obtener_enlace_cima(cn, nombre_med):
-    # Si no hay CN, busca por el nombre en la lupa de CIMA
     if not cn:
         med_encode = urllib.parse.quote(str(nombre_med))
         return f"https://cima.aemps.es/cima/publico/lista.html?raZonSocial={med_encode}"
-    
     try:
-        # Magia: Conectamos a la API del Ministerio para sacar el enlace DIRECTO al prospecto
         url_api = f"https://cima.aemps.es/cima/rest/medicamento?cn={cn}"
         req = urllib.request.Request(url_api, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=3) as response:
@@ -51,11 +58,9 @@ def obtener_enlace_cima(cn, nombre_med):
                 data = json.loads(response.read().decode('utf-8'))
                 nregistro = data.get('nregistro')
                 if nregistro:
-                    # Este es el enlace exacto al texto del prospecto
                     return f"https://cima.aemps.es/cima/dochtml/p/{nregistro}/Prospecto.html"
     except Exception as e:
-        pass # Si falla (ej. CIMA está caído), salta a la búsqueda normal
-    
+        pass 
     return f"https://cima.aemps.es/cima/publico/lista.html?cn={cn}"
 
 # --- 3. INTERFAZ PRINCIPAL ---
@@ -142,7 +147,7 @@ elif st.session_state['auth'] == "admin":
     menu = st.sidebar.radio("Navegación", ["📊 Dashboard & Avisos", "🗂️ Editor Base de Datos", "📤 Importar Excel", "➕ Alta Manual", "🚪 Salir"])
 
     if menu == "📊 Dashboard & Avisos":
-        st.header("Seguimiento de Recogidas")
+        st.header("Seguimiento y Avisos")
         conn = crear_conexion(); df = pd.read_sql("SELECT * FROM pacientes", conn); conn.close()
         
         if df.empty:
@@ -160,25 +165,37 @@ elif st.session_state['auth'] == "admin":
 
             for i, r in df.iterrows():
                 with st.container():
-                    # Añadimos espacio para el botón de "Nuevo Pedido"
-                    c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1.5])
+                    c1, c2, c3 = st.columns([3, 2, 2])
                     c1.write(f"👤 **{r['nombre']} {r['primer_apellido']}**")
                     color = "🟢" if r['estado'] == "CONFIRMADO" else "🟡"
                     c2.write(f"{color} {r['estado']}")
                     
-                    if c3.button("📧 Email", key=f"e_{r['num_historia']}"):
-                        if enviar_email(r['email'], r['nombre'], URL_APP): st.success("OK")
-                    
-                    msg_wa = urllib.parse.quote(f"Hola {r['nombre']}, su medicación está lista. Acceda aquí: {URL_APP}")
-                    c4.markdown(f"[📲 WhatsApp](https://wa.me/{r['telefono']}?text={msg_wa})")
-                    
-                    # BOTÓN DE RESTABLECER (Solo sale si ya han recogido el pedido)
                     if r['estado'] == 'CONFIRMADO':
-                        if c5.button("🔄 Nuevo Pedido", key=f"r_{r['num_historia']}"):
+                        if c3.button("🔄 Nuevo Pedido", key=f"r_{r['num_historia']}"):
                             conn = crear_conexion(); c = conn.cursor()
                             c.execute("UPDATE pacientes SET estado='Pendiente' WHERE num_historia=?", (r['num_historia'],))
                             conn.commit(); conn.close()
                             st.rerun()
+                    
+                    # NUEVO: Desplegable para programar la fecha y hora
+                    with st.expander("🔔 Programar Recogida y Avisar"):
+                        col_f, col_h = st.columns(2)
+                        # Widgets para seleccionar fecha y hora
+                        f_rec = col_f.date_input("Día de recogida", key=f"fd_{r['num_historia']}")
+                        h_rec = col_h.time_input("Hora a partir de", key=f"fh_{r['num_historia']}")
+                        
+                        st.write("Seleccione el método de envío:")
+                        col_btn1, col_btn2 = st.columns(2)
+                        
+                        if col_btn1.button("📧 Enviar Confirmación por Email", key=f"e_{r['num_historia']}"):
+                            if enviar_email(r['email'], r['nombre'], URL_APP, f_rec, h_rec): 
+                                st.success(f"¡Email enviado con la fecha {f_rec.strftime('%d/%m/%Y')} a las {h_rec.strftime('%H:%M')}!")
+                            else:
+                                st.error("Error al enviar.")
+                        
+                        # También hemos actualizado el mensaje de WhatsApp para que lleve la hora
+                        msg_wa = urllib.parse.quote(f"Hola {r['nombre']}, su medicación está lista.\n\nPuede pasar a recogerla el {f_rec.strftime('%d/%m/%Y')} a partir de las {h_rec.strftime('%H:%M')}.\n\nConfirme su recogida aquí: {URL_APP}")
+                        col_btn2.markdown(f"[📲 Enviar por WhatsApp](https://wa.me/{r['telefono']}?text={msg_wa})")
                     
                     st.divider()
 
@@ -216,7 +233,6 @@ elif st.session_state['auth'] == "admin":
                 st.success("¡Importación finalizada!")
 
     elif menu == "➕ Alta Manual":
-        # Activar el "clear_on_submit" para que las celdas se vacíen al guardar
         with st.form("registro_manual", clear_on_submit=True):
             h = st.text_input("Nº Historia / DNI")
             n = st.text_input("Nombre")
@@ -228,12 +244,11 @@ elif st.session_state['auth'] == "admin":
             cn = st.text_input("Código Nacional (CN - Opcional, 6 dígitos)")
             
             if st.form_submit_button("Registrar Nuevo Paciente"):
-                if h and n: # Comprobación básica de que haya escrito algo
+                if h and n:
                     conn = crear_conexion(); c = conn.cursor()
                     try:
                         c.execute("INSERT INTO pacientes VALUES (?,?,?,?,?,?,?,?,?)", (h,n,a,e,t,p,m,cn,"Pendiente"))
                         conn.commit()
-                        # Quitamos el st.rerun() para permitir que el formulario se limpie visualmente
                         st.success(f"¡Paciente {n} {a} registrado! El formulario se ha vaciado para el siguiente.")
                     except: 
                         st.error("Error: El ID / Nº Historia ya existe en el sistema.")
@@ -249,15 +264,12 @@ elif st.session_state['auth'] == "paciente":
     p = st.session_state['user_data']
     st.title(f"👋 Bienvenido/a, {p[1]} {p[2]}")
     
-    # DATOS DEL PACIENTE
     medicacion = p[6]
     codigo_nacional = p[7]
     estado_actual = p[8]
     
-    # NUEVA CONEXIÓN INTELIGENTE A CIMA
     enlace_cima = obtener_enlace_cima(codigo_nacional, medicacion)
     
-    # Construcción del evento para Google Calendar
     titulo_cal = urllib.parse.quote("Recogida de Medicación - Farmacia")
     detalles_cal = urllib.parse.quote(f"Recuerda ir a la farmacia a recoger: {medicacion}.\n¡No olvides llevar tu QR de la App!")
     enlace_cal = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={titulo_cal}&details={detalles_cal}"
@@ -271,7 +283,7 @@ elif st.session_state['auth'] == "paciente":
 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
     <a href="{enlace_cima}" target="_blank" style="text-decoration: none;">
         <button style="background-color: #008CBA; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-            📄 Leer prospecto exacto en CIMA
+            📄 Leer prospecto en CIMA
         </button>
     </a>
     <a href="{enlace_cal}" target="_blank" style="text-decoration: none;">
@@ -285,14 +297,12 @@ elif st.session_state['auth'] == "paciente":
     
     st.write("")
     
-    # LÓGICA DEL QR Y CONFIRMACIÓN
     if estado_actual != 'CONFIRMADO':
         if st.button("✅ CONFIRMAR QUE PASARÉ A RECOGERLA", use_container_width=True):
             conn = crear_conexion(); c = conn.cursor()
             c.execute("UPDATE pacientes SET estado='CONFIRMADO' WHERE num_historia=?", (p[0],))
             conn.commit(); conn.close()
             
-            # Actualizamos la memoria temporal para mostrar el QR
             lista_p = list(p)
             lista_p[8] = 'CONFIRMADO'
             st.session_state['user_data'] = tuple(lista_p)
@@ -302,7 +312,6 @@ elif st.session_state['auth'] == "paciente":
             
     else:
         st.success("✅ Recogida confirmada. Por favor, muestra este código QR en el mostrador de la farmacia:")
-        # Generador de QR dinámico a través de API
         qr_data = urllib.parse.quote(f"Paciente:{p[1]} {p[2]} | ID:{p[0]} | Med:{p[6]}")
         qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={qr_data}&color=004d99"
         
