@@ -7,9 +7,10 @@ import urllib.parse
 import urllib.request
 import json
 import datetime
+from datetime import timedelta
 from io import BytesIO
 
-# --- 1. CONFIGURACIÓN BASE DE DATOS (v7 con Telegram ID) ---
+# --- 1. CONFIGURACIÓN BASE DE DATOS ---
 def crear_conexion():
     return sqlite3.connect('farmacia_v7.db', check_same_thread=False)
 
@@ -29,9 +30,9 @@ def enviar_email(destinatario, nombre, url_app, fecha, hora):
         pwd = st.secrets["EMAIL_PASSWORD"]
         fecha_str = fecha.strftime('%d/%m/%Y')
         hora_str = hora.strftime('%H:%M')
-        cuerpo_mensaje = f"Hola {nombre},\n\nSu medicación ya está lista.\n\n📅 Día de recogida: {fecha_str}\n🕒 A partir de las: {hora_str}\n\nConfirme aquí:\n{url_app}"
+        cuerpo_mensaje = f"Hola {nombre},\n\nSu medicación ya está lista en nuestra farmacia.\n\n📅 Día de recogida: {fecha_str}\n🕒 Hora asignada (a partir de las): {hora_str}\n\nPara evitar esperas, le rogamos respete este horario.\n\nConfirme su recogida aquí:\n{url_app}"
         msg = MIMEText(cuerpo_mensaje)
-        msg['Subject'] = "AVISO: Farmacia - Medicación Lista"
+        msg['Subject'] = "AVISO: Farmacia - Su Cita de Recogida"
         msg['From'] = remitente
         msg['To'] = destinatario
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
@@ -128,23 +129,25 @@ if not st.session_state['auth']:
 # --- VISTA ADMINISTRADOR ---
 elif st.session_state['auth'] == "admin":
     st.sidebar.header("Panel de Gestión")
-    menu = st.sidebar.radio("Navegación", ["📊 Seguimiento y Avisos", "🗂️ Editor Base de Datos", "📤 Importar Excel", "➕ Alta Manual", "🚪 Salir"])
+    menu = st.sidebar.radio("Navegación", [
+        "📊 Seguimiento Individual", 
+        "🚀 Envío Masivo Programado",  # NUEVA OPCIÓN
+        "🗂️ Editor Base de Datos", 
+        "📤 Importar Excel", 
+        "➕ Alta Manual", 
+        "🚪 Salir"
+    ])
 
-    if menu == "📊 Seguimiento y Avisos":
-        st.header("Seguimiento y Avisos")
+    if menu == "📊 Seguimiento Individual":
+        st.header("Seguimiento y Avisos Individuales")
         conn = crear_conexion(); df = pd.read_sql("SELECT * FROM pacientes", conn); conn.close()
         
         if df.empty:
             st.warning("No hay pacientes en la base de datos.")
         else:
-            total = len(df)
-            confirmados = len(df[df['estado'] == 'CONFIRMADO'])
-            pendientes = total - confirmados
-            
+            total = len(df); confirmados = len(df[df['estado'] == 'CONFIRMADO']); pendientes = total - confirmados
             col_m1, col_m2, col_m3 = st.columns(3)
-            col_m1.metric("👥 Total Pacientes", total)
-            col_m2.metric("⏳ Pendientes", pendientes)
-            col_m3.metric("✅ Confirmados", confirmados)
+            col_m1.metric("👥 Total Pacientes", total); col_m2.metric("⏳ Pendientes", pendientes); col_m3.metric("✅ Confirmados", confirmados)
             st.divider()
 
             for i, r in df.iterrows():
@@ -158,36 +161,100 @@ elif st.session_state['auth'] == "admin":
                         if c3.button("🔄 Nuevo Pedido", key=f"r_{r['num_historia']}"):
                             conn = crear_conexion(); c = conn.cursor()
                             c.execute("UPDATE pacientes SET estado='Pendiente' WHERE num_historia=?", (r['num_historia'],))
-                            conn.commit(); conn.close()
-                            st.rerun()
+                            conn.commit(); conn.close(); st.rerun()
                     
-                    with st.expander("🔔 Programar Recogida y Avisar"):
+                    with st.expander("🔔 Programar Recogida (Individual)"):
                         col_f, col_h = st.columns(2)
                         f_rec = col_f.date_input("Día de recogida", key=f"fd_{r['num_historia']}")
                         h_rec = col_h.time_input("Hora a partir de", key=f"fh_{r['num_historia']}")
-                        
-                        st.write("Seleccione el método de envío:")
+                        st.write("Método de envío:")
                         col_btn1, col_btn2, col_btn3 = st.columns(3)
                         
                         if col_btn1.button("📧 Email", key=f"e_{r['num_historia']}"):
-                            if enviar_email(r['email'], r['nombre'], URL_APP, f_rec, h_rec): 
-                                st.success("¡Email enviado!")
-                            else: st.error("Error al enviar email.")
+                            if enviar_email(r['email'], r['nombre'], URL_APP, f_rec, h_rec): st.success("¡Email enviado!")
+                            else: st.error("Error.")
                         
-                        msg_wa = urllib.parse.quote(f"Hola {r['nombre']}, su medicación está lista.\nPuede pasar a recogerla el {f_rec.strftime('%d/%m/%Y')} a partir de las {h_rec.strftime('%H:%M')}.\n\nConfirme su recogida aquí: {URL_APP}")
+                        msg_wa = urllib.parse.quote(f"Hola {r['nombre']}, su medicación está lista.\nPuede pasar el {f_rec.strftime('%d/%m/%Y')} a las {h_rec.strftime('%H:%M')}.\nConfirme aquí: {URL_APP}")
                         col_btn2.markdown(f"[📲 WhatsApp](https://wa.me/{r['telefono']}?text={msg_wa})")
                         
-                        # NUEVO: Botón Telegram
                         if r['telegram_id']:
-                            if col_btn3.button("✈️ Telegram (Silencioso)", key=f"t_{r['num_historia']}"):
-                                msg_tg = f"Hola {r['nombre']}, su medicación está lista.\n\n📅 Fecha: {f_rec.strftime('%d/%m/%Y')}\n🕒 Hora: {h_rec.strftime('%H:%M')}\n\nConfirme aquí: {URL_APP}"
-                                if enviar_telegram(r['telegram_id'], msg_tg):
-                                    st.success("¡Aviso enviado por Telegram al instante!")
-                                else: st.error("Error. Asegúrate de que el paciente inició el Bot.")
-                        else:
-                            col_btn3.warning("Falta ID Telegram")
-                    
+                            if col_btn3.button("✈️ Telegram", key=f"t_{r['num_historia']}"):
+                                msg_tg = f"Hola {r['nombre']}, su medicación está lista.\n📅 Fecha: {f_rec.strftime('%d/%m/%Y')}\n🕒 Hora: {h_rec.strftime('%H:%M')}\nConfirme aquí: {URL_APP}"
+                                if enviar_telegram(r['telegram_id'], msg_tg): st.success("Telegram enviado!")
+                                else: st.error("Error.")
                     st.divider()
+
+    # --- NUEVO: SISTEMA DE AGENDA MASIVA ---
+    elif menu == "🚀 Envío Masivo Programado":
+        st.header("Envío Masivo de Citas Escalonadas")
+        st.write("Programa automáticamente los emails de los pacientes pendientes separándolos por intervalos de tiempo.")
+        
+        conn = crear_conexion()
+        # Solo traemos a los pacientes "Pendientes"
+        df_pendientes = pd.read_sql("SELECT num_historia, nombre, primer_apellido, email, medicacion FROM pacientes WHERE estado='Pendiente'", conn)
+        conn.close()
+
+        if df_pendientes.empty:
+            st.info("🎉 ¡No hay pacientes pendientes de avisar!")
+        else:
+            st.write("### 1. Selecciona a quiénes quieres avisar")
+            # Añadimos una columna de casillas (por defecto desmarcada)
+            df_pendientes.insert(0, "Seleccionar", False)
+            
+            # Mostramos la tabla interactiva
+            df_editada = st.data_editor(
+                df_pendientes, 
+                hide_index=True, 
+                use_container_width=True,
+                column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False)}
+            )
+            
+            seleccionados = df_editada[df_editada["Seleccionar"] == True]
+            st.write(f"Pacientes seleccionados: **{len(seleccionados)}**")
+
+            st.write("### 2. Configura la Agenda")
+            col_d, col_h1, col_h2, col_m = st.columns(4)
+            fecha_masiva = col_d.date_input("Día de entrega")
+            hora_inicio = col_h1.time_input("Hora Primera Cita", datetime.time(10, 0))
+            hora_fin = col_h2.time_input("Hora Límite", datetime.time(13, 30))
+            intervalo = col_m.number_input("Intervalo (minutos)", min_value=1, value=5)
+
+            if st.button("🚀 INICIAR ENVÍO AUTOMÁTICO (EMAIL)", use_container_width=True):
+                if seleccionados.empty:
+                    st.error("Debes marcar la casilla de al menos un paciente en la tabla.")
+                else:
+                    # Combinamos la fecha y hora para hacer cálculos
+                    tiempo_actual = datetime.datetime.combine(fecha_masiva, hora_inicio)
+                    tiempo_limite = datetime.datetime.combine(fecha_masiva, hora_fin)
+                    
+                    reporte = []
+                    
+                    with st.spinner('Procesando agenda y enviando correos silenciosos...'):
+                        for idx, row in seleccionados.iterrows():
+                            # Comprobar que no nos pasamos de la hora de cierre
+                            if tiempo_actual > tiempo_limite:
+                                st.warning(f"⚠️ Se alcanzó la hora límite. No se ha avisado a {row['nombre']} ni a los siguientes.")
+                                break
+                            
+                            # Enviar el email real
+                            exito = enviar_email(row['email'], row['nombre'], URL_APP, tiempo_actual.date(), tiempo_actual.time())
+                            
+                            # Guardar en el reporte
+                            reporte.append({
+                                "Paciente": f"{row['nombre']} {row['primer_apellido']}",
+                                "Medicación": row['medicacion'],
+                                "Hora Asignada": tiempo_actual.strftime('%H:%M'),
+                                "Email": "✅ Enviado" if exito else "❌ Fallo"
+                            })
+                            
+                            # Sumar los minutos (ej: 5 min) para el siguiente paciente
+                            tiempo_actual += timedelta(minutes=intervalo)
+                    
+                    # Mostrar resumen final
+                    st.success("¡Operación completada!")
+                    st.write("📋 **Resumen de Citas Asignadas:**")
+                    st.dataframe(pd.DataFrame(reporte), use_container_width=True)
+
 
     elif menu == "🗂️ Editor Base de Datos":
         st.header("Editor Interactivo de Pacientes")
@@ -217,13 +284,13 @@ elif st.session_state['auth'] == "admin":
             h = st.text_input("Nº Historia / DNI"); n = st.text_input("Nombre"); a = st.text_input("Primer Apellido")
             e = st.text_input("Email"); t = st.text_input("Teléfono (34...)"); p = st.text_input("Clave Inicial")
             m = st.text_input("Medicación Asignada"); cn = st.text_input("Código Nacional (CN)")
-            tg = st.text_input("Telegram ID (Opcional, dejar en blanco si no se sabe)")
+            tg = st.text_input("Telegram ID (Opcional)")
             if st.form_submit_button("Registrar"):
                 if h and n:
                     conn = crear_conexion(); c = conn.cursor()
                     try:
                         c.execute("INSERT INTO pacientes VALUES (?,?,?,?,?,?,?,?,?,?)", (h,n,a,e,t,p,m,cn,"Pendiente",tg))
-                        conn.commit(); st.success(f"Paciente registrado.")
+                        conn.commit(); st.success("Paciente registrado.")
                     except: st.error("Error: El ID ya existe.")
                     finally: conn.close()
 
@@ -234,12 +301,9 @@ elif st.session_state['auth'] == "paciente":
     p = st.session_state['user_data']
     st.title(f"👋 Bienvenido/a, {p[1]} {p[2]}")
     
-    medicacion = p[6]
-    codigo_nacional = p[7]
-    estado_actual = p[8]
-    telegram_actual = p[9]
-    
+    medicacion = p[6]; codigo_nacional = p[7]; estado_actual = p[8]; telegram_actual = p[9]
     enlace_cima = obtener_enlace_cima(codigo_nacional, medicacion)
+    
     titulo_cal = urllib.parse.quote("Recogida de Medicación")
     detalles_cal = urllib.parse.quote(f"Recuerda recoger: {medicacion}.\n¡Lleva tu QR!")
     enlace_cal = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={titulo_cal}&details={detalles_cal}"
@@ -279,11 +343,9 @@ elif st.session_state['auth'] == "paciente":
     st.write("---")
     with st.expander("⚙️ Ajustes de Cuenta y Notificaciones"):
         st.write("### ✈️ Avisos por Telegram")
-        st.info("Para recibir avisos automáticos de la farmacia sin dar tu teléfono: \n1. Entra en Telegram y busca a **@getmyid_bot** para saber tu número ID.\n2. Busca nuestro bot (el que hayas creado) y dale a 'Iniciar'.\n3. Pega tu ID numérico aquí abajo.")
-        
+        st.info("Para recibir avisos automáticos de la farmacia sin dar tu teléfono: \n1. Entra en Telegram y busca a **@getmyid_bot** para saber tu número ID.\n2. Busca nuestro bot y dale a 'Iniciar'.\n3. Pega tu ID numérico aquí abajo.")
         nuevo_tg = st.text_input("Tu ID de Telegram", value=telegram_actual if telegram_actual else "")
         nueva_p = st.text_input("Cambiar mi contraseña", type="password")
-        
         if st.button("Guardar Ajustes"):
             conn = crear_conexion(); c = conn.cursor()
             if nueva_p:
@@ -291,8 +353,6 @@ elif st.session_state['auth'] == "paciente":
             else:
                 c.execute("UPDATE pacientes SET telegram_id=? WHERE num_historia=?", (nuevo_tg, p[0]))
             conn.commit(); conn.close()
-            
-            # Actualizamos los datos en vivo
             lista_p = list(p); lista_p[9] = nuevo_tg; st.session_state['user_data'] = tuple(lista_p)
             st.success("Ajustes guardados con éxito.")
 
